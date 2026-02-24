@@ -156,9 +156,59 @@ class ADBManager {
     async reboot(serial) {
         console.log(`[ADB] Proses selesai, merestart perangkat ${serial}...`);
         try {
+            await this.clearProxy(serial); // Bersihkan proxy sebelum reboot agar bersih saat nyala lagi
             return this.shell(serial, 'reboot');
         } catch (err) {
             console.error(`[ADB] Gagal merestart perangkat ${serial}:`, err.message);
+        }
+    }
+
+    async getRandomProxy() {
+        const filePath = path.join(__dirname, 'proxy.txt');
+        if (!fs.existsSync(filePath)) return null;
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n').map(l => l.trim()).filter(l => l !== '');
+        if (lines.length === 0) return null;
+        return lines[Math.floor(Math.random() * lines.length)];
+    }
+
+    async setProxy(serial, proxy) {
+        console.log(`[ADB] Memasang proxy ${proxy} pada ${serial}`);
+        try {
+            // Format proxy: host:port
+            await this.shell(serial, `settings put global http_proxy ${proxy}`);
+            return true;
+        } catch (err) {
+            console.error(`[ADB] Gagal memasang proxy:`, err.message);
+            return false;
+        }
+    }
+
+    async clearProxy(serial) {
+        console.log(`[ADB] Membersihkan proxy pada ${serial}`);
+        try {
+            await this.shell(serial, 'settings put global http_proxy :0');
+        } catch (err) {
+            console.error(`[ADB] Gagal membersihkan proxy:`, err.message);
+        }
+    }
+
+    async checkIP(serial, expectedProxy) {
+        try {
+            console.log(`[ADB] Memverifikasi IP pada ${serial}...`);
+            const stream = await client.shell(serial, 'curl -s https://ifconfig.me/ip || wget -qO- https://ifconfig.me/ip');
+            const ip = (await adb.util.readAll(stream)).toString().trim();
+            
+            if (ip && expectedProxy.includes(ip)) {
+                console.log(`[ADB] IP Terverifikasi: ${ip}`);
+                return true;
+            } else {
+                console.log(`[ADB] IP (${ip}) tidak sesuai dengan proxy atau gagal fetch.`);
+                return false;
+            }
+        } catch (err) {
+            console.error(`[ADB] Gagal cek IP:`, err.message);
+            return false;
         }
     }
 
