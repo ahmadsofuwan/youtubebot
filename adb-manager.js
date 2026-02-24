@@ -444,13 +444,13 @@ class ADBManager {
                 return true;
             }
             
-            // Fallback koordinat dinamis jika diminta
+            // Fallback koordinat dinamis jika diminta ATAU jika kata "skip" terdeteksi tapi posisi tidak ketemu
             if (useFallback || xml.toLowerCase().includes('skip') || xml.toLowerCase().includes('lewati')) {
                  const res = await this.getDeviceProperties(serial);
-                 // Area Skip biasanya di kanan bawah player (sekitar 90% pudar, 25% tinggi layar untuk player atas)
-                 const fx = Math.floor(res.width * 0.88);
-                 const fy = Math.floor(res.height * 0.28);
-                 console.log(`[ADB] Menggunakan fallback koordinat Skip Ad Dinamis (${fx}, ${fy}) pada ${serial}...`);
+                 // Area Skip biasanya di kanan bawah player (sekitar 90% lebar, 25% tinggi)
+                 const fx = Math.floor(res.width * 0.90);
+                 const fy = Math.floor(res.height * 0.25);
+                 console.log(`[ADB] Menggunakan fallback koordinat Skip Ad (${fx}, ${fy}) pada ${serial}...`);
                  await this.tap(serial, fx, fy); 
                  return true;
             }
@@ -546,15 +546,22 @@ class ADBManager {
                                 await this.clickFirstVideo(device.id, video);
                                 console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${device.id}`);
 
-                                // Pengecekan iklan pre-roll SEGERA dan intensif
-                                console.log(`[ADB] Memantau iklan pre-roll di ${device.id}...`);
-                                for (let i = 0; i < 6; i++) {
-                                    const skipped = await this.checkAndSkipAds(device.id, i >= 4); // Gunakan fallback koordinat di percobaan terakhir
-                                    if (skipped) {
-                                        console.log(`[ADB] Iklan pre-roll berhasil dilewati di ${device.id}`);
-                                        await new Promise(resolve => setTimeout(resolve, 3000));
+                                // Pengecekan iklan pre-roll SEGERA dan intensif (Style app.py)
+                                console.log(`[ADB] Menunggu tombol skip di ${device.id}...`);
+                                let skipFound = false;
+                                for (let i = 0; i < 12; i++) { // Pantau selama ~24 detik dengan interval 2 detik
+                                    skipFound = await this.checkAndSkipAds(device.id, false);
+                                    if (skipFound) {
+                                        console.log(`[ADB] Iklan berhasil dilewati via teks/id di ${device.id}`);
+                                        break;
                                     }
-                                    await new Promise(resolve => setTimeout(resolve, 3000));
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
+                                }
+
+                                if (!skipFound) {
+                                    console.log(`[ADB] Tombol skip tidak ditemukan via XML, mencoba fallback tap di ${device.id}...`);
+                                    // Gunakan fallback koordinat yang lebih agresif (90% lebar, 25% tinggi)
+                                    await this.checkAndSkipAds(device.id, true);
                                 }
 
                                 // Jeda sebentar sebelum cek banner iklan
