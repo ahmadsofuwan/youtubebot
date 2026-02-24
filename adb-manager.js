@@ -396,7 +396,11 @@ class ADBManager {
                                 await new Promise(resolve => setTimeout(resolve, 1000));
 
                                 await this.openYouTube(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 5000)); 
+                                await new Promise(resolve => setTimeout(resolve, 3000)); 
+                                
+                                // Paksa portrait lagi setelah YouTube terbuka (mencegah YouTube start di landscape)
+                                await this.forcePortrait(device.id);
+                                await new Promise(resolve => setTimeout(resolve, 2000));
                                 
                                 // Coba lewati dialog login jika ada
                                 await this.dismissYouTubeDismissibleDialogs(device.id);
