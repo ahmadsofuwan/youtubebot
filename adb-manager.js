@@ -552,23 +552,26 @@ class ADBManager {
                                 await this.clickFirstVideo(device.id, video);
                                 console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${device.id}`);
 
-                                // Pengecekan iklan pre-roll SEGERA dan intensif (Style app.py)
-                                console.log(`[ADB] Menunggu tombol skip di ${device.id}...`);
-                                let skipFound = false;
-                                for (let i = 0; i < 12; i++) { // Pantau selama ~24 detik dengan interval 2 detik
-                                    skipFound = await this.checkAndSkipAds(device.id, false);
-                                    if (skipFound) {
-                                        console.log(`[ADB] Iklan berhasil dilewati via teks/id di ${device.id}`);
-                                        break;
-                                    }
-                                    await new Promise(resolve => setTimeout(resolve, 2000));
-                                }
+                                 // Jeda sebelum cek iklan pre-roll (Menghindari scan terlalu dini)
+                                 await new Promise(resolve => setTimeout(resolve, 5000));
 
-                                if (!skipFound) {
-                                    console.log(`[ADB] Tombol skip tidak ditemukan via XML, mencoba fallback tap di ${device.id}...`);
-                                    // Gunakan fallback koordinat yang lebih agresif (90% lebar, 25% tinggi)
-                                    await this.checkAndSkipAds(device.id, true);
-                                }
+                                 // Pengecekan iklan pre-roll SEGERA (Dipercepat)
+                                 console.log(`[ADB] Menunggu tombol skip di ${device.id}...`);
+                                 let skipFound = false;
+                                 for (let i = 0; i < 6; i++) { // Pantau selama ~12-15 detik (Dump + 1s jeda)
+                                     skipFound = await this.checkAndSkipAds(device.id, false);
+                                     if (skipFound) {
+                                         console.log(`[ADB] Iklan berhasil dilewati via XML di ${device.id}`);
+                                         break;
+                                     }
+                                     // Gunakan jeda singkat saja agar tidak membuang waktu
+                                     await new Promise(resolve => setTimeout(resolve, 1000));
+                                 }
+
+                                 if (!skipFound) {
+                                     console.log(`[ADB] Skip tidak terdeteksi via XML dalam 15 detik, gunakan fallback tap...`);
+                                     await this.checkAndSkipAds(device.id, true);
+                                 }
 
                                 // Jeda sebentar sebelum cek banner iklan
                                 await new Promise(resolve => setTimeout(resolve, 2000));
