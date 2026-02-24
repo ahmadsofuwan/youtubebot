@@ -377,16 +377,15 @@ class ADBManager {
                 console.error('[ADB] Gagal mencari banner iklan:', err.message);
             }
 
-            console.log(`[ADB] Banner tidak ditemukan, mencoba scroll... (${attempts + 1}/${maxAttempts})`);
-            // Area aman: Bagian bawah layar (menghindari player/tombol next)
-            // Start dari bawah (1700) ke tengah-bawah (1000)
-            const startX = 540; 
-            const startY = 1700 + Math.floor(Math.random() * 50);
-            const endY = 900 + Math.floor(Math.random() * 50);
-            const duration = 1500; // 1.5 detik (sangat halus agar tidak terdeteksi tap)
+            console.log(`[ADB] Banner tidak ditemukan, mencoba scroll via Key Event (DPAD_DOWN)... (${attempts + 1}/${maxAttempts})`);
+            // Menggunakan Key Event arah bawah (KEYCODE_DPAD_DOWN = 20) 
+            // Kita tekan 5 kali untuk mensimulasikan scroll ke bawah tanpa risiko salah klik player
+            for (let i = 0; i < 5; i++) {
+                await this.keyevent(serial, 20);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
             
-            await this.swipe(serial, startX, startY, startX, endY, duration);
-            await new Promise(resolve => setTimeout(resolve, 3000)); 
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Tunggu konten dirender
             attempts++;
         }
         
