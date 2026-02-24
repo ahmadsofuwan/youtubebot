@@ -206,6 +206,19 @@ class ADBManager {
         }
     }
 
+    async ping(serial, host = 'www.youtube.com') {
+        console.log(`[ADB] Mencoba ping ke ${host} pada ${serial}...`);
+        try {
+            // -c 1: kirim 1 paket, -W 5: timeout 5 detik
+            const stream = await client.shell(serial, `ping -c 1 -W 5 ${host}`);
+            const output = (await adb.util.readAll(stream)).toString();
+            return output.includes('1 packets transmitted, 1 received') || output.includes('1 received');
+        } catch (err) {
+            console.error(`[ADB] Gagal melakukan ping:`, err.message);
+            return false;
+        }
+    }
+
     async getRandomVideo() {
         const filePath = path.join(__dirname, 'video_list.txt');
         if (!fs.existsSync(filePath)) return null;
@@ -442,7 +455,7 @@ class ADBManager {
                                     return;
                                 }
 
-                                // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS ---
+                                // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS & PING ---
                                 let proxyApplied = false;
                                 let retryCount = 0;
                                 while (!proxyApplied && retryCount < 5) {
@@ -459,18 +472,27 @@ class ADBManager {
                                     console.log(`[ADB] Proxy yang terpasang di sistem pada ${device.id}: ${appliedProxy || 'None'}`);
 
                                     if (appliedProxy && appliedProxy.includes(targetProxy)) {
-                                        proxyApplied = true;
-                                        console.log(`[ADB] Proxy ${targetProxy} BERHASIL terverifikasi di system settings pada ${device.id}.`);
+                                        // Verifikasi koneksi internet via proxy dengan ping ke YouTube
+                                        const canPing = await this.ping(device.id);
+                                        if (canPing) {
+                                            proxyApplied = true;
+                                            console.log(`[ADB] Proxy ${targetProxy} BERHASIL (Settings OK & Ping OK) pada ${device.id}.`);
+                                        } else {
+                                            retryCount++;
+                                            console.log(`[ADB] Proxy ${targetProxy} GAGAL (Tersambung tapi tidak bisa akses internet). Mencoba lagi... (${retryCount}/5)`);
+                                            await this.clearProxy(device.id);
+                                            await new Promise(resolve => setTimeout(resolve, 1000));
+                                        }
                                     } else {
                                         retryCount++;
-                                        console.log(`[ADB] Proxy ${targetProxy} GAGAL terpasang pada ${device.id} (System setting tidak cocok). Mencoba lagi... (${retryCount}/5)`);
+                                        console.log(`[ADB] Proxy ${targetProxy} GAGAL pada ${device.id} (System setting tidak cocok). Mencoba lagi... (${retryCount}/5)`);
                                         await this.clearProxy(device.id);
                                         await new Promise(resolve => setTimeout(resolve, 1000));
                                     }
                                 }
 
                                 if (!proxyApplied) {
-                                    console.log(`[ADB] Gagal memasang proxy di system settings pada ${device.id} setelah ${retryCount} kali percobaan.`);
+                                    console.log(`[ADB] Gagal memasang proxy yang berfungsi pada ${device.id} setelah ${retryCount} kali percobaan.`);
                                 }
                                 // -----------------------------------------------
 
