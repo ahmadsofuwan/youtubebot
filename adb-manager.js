@@ -378,8 +378,15 @@ class ADBManager {
             }
 
             console.log(`[ADB] Banner tidak ditemukan, mencoba scroll... (${attempts + 1}/${maxAttempts})`);
-            await this.swipe(serial, 540, 1500, 540, 800, 500); // Scroll down
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Scroll halus seperti menggunakan mouse (durasi lebih lama, koordinat sedikit acak)
+            const startX = 500 + Math.floor(Math.random() * 80);
+            const startY = 1400 + Math.floor(Math.random() * 100);
+            const moveDist = 500 + Math.floor(Math.random() * 200);
+            const endY = startY - moveDist;
+            const duration = 800 + Math.floor(Math.random() * 400); // 0.8 - 1.2 detik
+            
+            await this.swipe(serial, startX, startY, startX, endY, duration);
+            await new Promise(resolve => setTimeout(resolve, 2500)); // Tunggu konten dirender ulang
             attempts++;
         }
         
