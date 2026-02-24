@@ -153,6 +153,22 @@ class ADBManager {
         }
     }
 
+    async getFocusedWindow(serial) {
+        try {
+            const stream = await client.shell(serial, 'dumpsys window | grep mCurrentFocus');
+            const output = (await adb.util.readAll(stream)).toString().trim();
+            return output.toLowerCase();
+        } catch (err) {
+            return '';
+        }
+    }
+
+    async isPlayStoreOpen(serial) {
+        const focus = await this.getFocusedWindow(serial);
+        // Typical focus for Play Store: mCurrentFocus=Window{... com.android.vending/com.google.android.finsky.activities.MainActivity}
+        return focus.includes('vending') || focus.includes('playstore') || focus.includes('play.store');
+    }
+
     async reboot(serial) {
         console.log(`[ADB] Proses selesai, merestart perangkat ${serial}...`);
         try {
@@ -314,50 +330,59 @@ class ADBManager {
 
     async findAndClickAdBanner(serial) {
         console.log(`[ADB] Mencari banner iklan di bawah video pada ${serial}`);
-        try {
-            const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/banner.xml && cat /sdcard/banner.xml');
-            const xml = (await adb.util.readAll(xmlStream)).toString();
-            
-            if (!xml || xml.length < 100) return false;
+        
+        let attempts = 0;
+        const maxAttempts = 3; // Scroll up to 3 times to find the ad
 
-            const keywords = "Visit site|Visit advertiser|Kunjungi situs|Kunjungi pengiklan|Install|Pasang|Buka|Open|Learn more|Pelajari selengkapnya";
-            const resIds = "ad_call_to_action_button|visit_advertiser_button|ad_cta_button|cta_button|promoted_ad_cta";
-            
-            // Regex yang menangani bounds sebelum atau sesudah atribut teks/id (Order Independent)
-            const patterns = [
-                new RegExp(`text="[^"]*(${keywords})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
-                new RegExp(`content-desc="[^"]*(${keywords})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
-                new RegExp(`resource-id="[^"]*[:\\/](${resIds})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
-                new RegExp(`bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*(text|content-desc|resource-id)="[^"]*(${keywords}|${resIds})[^"]*"`, 'i')
-            ];
+        while (attempts < maxAttempts) {
+            try {
+                const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/banner.xml && cat /sdcard/banner.xml');
+                const xml = (await adb.util.readAll(xmlStream)).toString();
+                
+                if (xml && xml.length > 100) {
+                    const keywords = "Sponsored|Iklan|Visit site|Visit advertiser|Kunjungi situs|Kunjungi pengiklan|Install|Pasang|Buka|Open|Learn more|Pelajari selengkapnya";
+                    const resIds = "ad_call_to_action_button|visit_advertiser_button|ad_cta_button|cta_button|promoted_ad_cta";
+                    
+                    const patterns = [
+                        new RegExp(`text="[^"]*(${keywords})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
+                        new RegExp(`content-desc="[^"]*(${keywords})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
+                        new RegExp(`resource-id="[^"]*[:\\/](${resIds})[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i'),
+                        new RegExp(`bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*(text|content-desc|resource-id)="[^"]*(${keywords}|${resIds})[^"]*"`, 'i')
+                    ];
 
-            let bannerMatch = null;
-            let centerX, centerY;
+                    let bannerMatch = null;
+                    let centerX, centerY;
 
-            for (const pattern of patterns) {
-                bannerMatch = xml.match(pattern);
-                if (bannerMatch) {
-                    if (pattern.source.startsWith('bounds')) {
-                        centerX = Math.floor((parseInt(bannerMatch[1]) + parseInt(bannerMatch[3])) / 2);
-                        centerY = Math.floor((parseInt(bannerMatch[2]) + parseInt(bannerMatch[4])) / 2);
-                    } else {
-                        centerX = Math.floor((parseInt(bannerMatch[2]) + parseInt(bannerMatch[4])) / 2);
-                        centerY = Math.floor((parseInt(bannerMatch[3]) + parseInt(bannerMatch[5])) / 2);
+                    for (const pattern of patterns) {
+                        bannerMatch = xml.match(pattern);
+                        if (bannerMatch) {
+                            if (pattern.source.startsWith('bounds')) {
+                                centerX = Math.floor((parseInt(bannerMatch[1]) + parseInt(bannerMatch[3])) / 2);
+                                centerY = Math.floor((parseInt(bannerMatch[2]) + parseInt(bannerMatch[4])) / 2);
+                            } else {
+                                centerX = Math.floor((parseInt(bannerMatch[2]) + parseInt(bannerMatch[4])) / 2);
+                                centerY = Math.floor((parseInt(bannerMatch[3]) + parseInt(bannerMatch[5])) / 2);
+                            }
+                            break;
+                        }
                     }
-                    break;
+                    
+                    if (bannerMatch) {
+                        console.log(`[ADB] Banner iklan ditemukan! Mengunjungi pengiklan di ${centerX}, ${centerY}`);
+                        await this.tap(serial, centerX, centerY);
+                        return true;
+                    }
                 }
+            } catch (err) {
+                console.error('[ADB] Gagal mencari banner iklan:', err.message);
             }
-            
-            if (bannerMatch) {
-                console.log(`[ADB] Banner iklan ditemukan! Mengunjungi pengiklan di ${centerX}, ${centerY}`);
-                await this.tap(serial, centerX, centerY);
-                return true;
-            } else {
-                console.log(`[ADB] Banner tidak ditemukan di XML (${xml.length} bytes).`);
-            }
-        } catch (err) {
-            console.error('[ADB] Gagal mencari banner iklan:', err.message);
+
+            console.log(`[ADB] Banner tidak ditemukan, mencoba scroll... (${attempts + 1}/${maxAttempts})`);
+            await this.swipe(serial, 540, 1500, 540, 800, 500); // Scroll down
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
         }
+        
         return false;
     }
 
@@ -423,7 +448,6 @@ class ADBManager {
             if (useFallback || xml.toLowerCase().includes('skip') || xml.toLowerCase().includes('lewati')) {
                  const res = await this.getDeviceProperties(serial);
                  // Area Skip biasanya di kanan bawah player (sekitar 90% pudar, 25% tinggi layar untuk player atas)
-                 // Namun lebih aman klik area standard skip ad YouTube (sekitar 85% lebar, 28% tinggi)
                  const fx = Math.floor(res.width * 0.88);
                  const fy = Math.floor(res.height * 0.28);
                  console.log(`[ADB] Menggunakan fallback koordinat Skip Ad Dinamis (${fx}, ${fy}) pada ${serial}...`);
@@ -539,12 +563,20 @@ class ADBManager {
                                 const bannerClicked = await this.findAndClickAdBanner(device.id);
                                 if (bannerClicked) {
                                     await new Promise(resolve => setTimeout(resolve, 5000));
-                                    const scrollDuration = Math.floor(Math.random() * 30) + 60;
-                                    await this.slowScroll(device.id, scrollDuration);
                                     
-                                    console.log(`[ADB] Selesai mengunjungi iklan, kembali ke YouTube pada ${device.id}`);
-                                    await this.keyevent(device.id, 4); 
-                                    await new Promise(resolve => setTimeout(resolve, 3000));
+                                    // Pastikan bukan Play Store yang terbuka
+                                    if (await this.isPlayStoreOpen(device.id)) {
+                                        console.log(`[ADB] Play Store terdeteksi setelah klik iklan, kembali ke YouTube...`);
+                                        await this.keyevent(device.id, 4); // Back
+                                        await new Promise(resolve => setTimeout(resolve, 2000));
+                                    } else {
+                                        const scrollDuration = Math.floor(Math.random() * 30) + 60;
+                                        await this.slowScroll(device.id, scrollDuration);
+                                        
+                                        console.log(`[ADB] Selesai mengunjungi iklan, kembali ke YouTube pada ${device.id}`);
+                                        await this.keyevent(device.id, 4); 
+                                        await new Promise(resolve => setTimeout(resolve, 3000));
+                                    }
                                 }
 
                                 // Loop pengecekan iklan selama durasi nonton (Menggunakan recursive timeout agar lebih stabil)
