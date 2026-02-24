@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Android Multi-Control Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="glass-container">
+        <header>
+            <div class="logo">
+                <i data-lucide="smartphone"></i>
+                <h1>ADB<span>Controller</span></h1>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <span id="device-count">0</span>
+                    <label>Devices Connected</label>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="controls-panel">
+                <h2>Bulk Actions</h2>
+                <div class="action-buttons">
+                    <button id="btn-reboot" class="btn btn-warning">
+                        <i data-lucide="refresh-cw"></i> Reboot All
+                    </button>
+                    <button id="btn-unlock" class="btn btn-secondary">
+                        <i data-lucide="unlock"></i> Unlock All
+                    </button>
+                    <button id="btn-home" class="btn btn-primary">
+                        <i data-lucide="home"></i> Home All
+                    </button>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="bulk-command" placeholder="Enter shell command (e.g. input keyevent 26)">
+                    <button id="btn-run-bulk" class="btn btn-accent">Run Bulk</button>
+                </div>
+            </section>
+
+            <section class="device-grid" id="device-grid">
+                <!-- Device cards will be injected here -->
+                <div class="empty-state">
+                    <i data-lucide="search"></i>
+                    <p>Searching for devices via ADB...</p>
+                </div>
+ sections>
+        </main>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
