@@ -143,6 +143,16 @@ class ADBManager {
     return this.shell(serial, `input keyevent ${keycode}`);
   }
 
+    async forcePortrait(serial) {
+        console.log(`[ADB] Memaksa orientasi Portrait pada ${serial}`);
+        try {
+            await this.shell(serial, 'settings put system accelerometer_rotation 0');
+            await this.shell(serial, 'settings put system user_rotation 0');
+        } catch (err) {
+            console.error(`[ADB] Gagal memaksa portrait pada ${serial}:`, err.message);
+        }
+    }
+
     async getRandomVideo() {
         const filePath = path.join(__dirname, 'video_list.txt');
         if (!fs.existsSync(filePath)) return null;
@@ -378,6 +388,9 @@ class ADBManager {
                                     console.log(`[ADB] video_list.txt kosong atau tidak ada.`);
                                     return;
                                 }
+
+                                await this.forcePortrait(device.id);
+                                await new Promise(resolve => setTimeout(resolve, 1000));
 
                                 await this.stopYouTube(device.id);
                                 await new Promise(resolve => setTimeout(resolve, 1000));
