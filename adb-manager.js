@@ -193,32 +193,16 @@ class ADBManager {
         }
     }
 
-    async getCurrentIP(serial) {
+    async getAppliedProxy(serial) {
         try {
-            const stream = await client.shell(serial, 'curl -s https://ifconfig.me/ip || wget -qO- https://ifconfig.me/ip');
-            const ip = (await adb.util.readAll(stream)).toString().trim();
-            return ip || null;
+            const stream = await client.shell(serial, 'settings get global http_proxy');
+            const output = (await adb.util.readAll(stream)).toString().trim();
+            // Jika tidak ada proxy, output biasanya ":0" atau "null"
+            if (output === ":0" || output === "null") return null;
+            return output;
         } catch (err) {
-            console.error(`[ADB] Gagal mengambil IP:`, err.message);
+            console.error(`[ADB] Gagal mengecek setting proxy:`, err.message);
             return null;
-        }
-    }
-
-    async checkIP(serial, expectedProxy) {
-        try {
-            console.log(`[ADB] Memverifikasi IP pada ${serial}...`);
-            const ip = await this.getCurrentIP(serial);
-            
-            if (ip && expectedProxy.includes(ip)) {
-                console.log(`[ADB] IP Terverifikasi: ${ip}`);
-                return true;
-            } else {
-                console.log(`[ADB] IP (${ip}) tidak sesuai dengan proxy atau gagal fetch.`);
-                return false;
-            }
-        } catch (err) {
-            console.error(`[ADB] Gagal cek IP:`, err.message);
-            return false;
         }
     }
 
@@ -458,40 +442,37 @@ class ADBManager {
                                     return;
                                 }
 
-                                // --- PROXY SETUP DENGAN VERIFIKASI PERUBAHAN IP ---
-                                const initialIP = await this.getCurrentIP(device.id);
-                                console.log(`[ADB] IP Awal pada ${device.id}: ${initialIP || 'Tidak diketahui'}`);
-
+                                // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS ---
                                 let proxyApplied = false;
                                 let retryCount = 0;
                                 while (!proxyApplied && retryCount < 5) {
-                                    const proxy = await this.getRandomProxy();
-                                    if (!proxy) {
+                                    const targetProxy = await this.getRandomProxy();
+                                    if (!targetProxy) {
                                         console.log('[ADB] proxy.txt tidak ditemukan atau kosong. Melewati setup proxy.');
                                         break;
                                     }
                                     
-                                    await this.setProxy(device.id, proxy);
-                                    await new Promise(resolve => setTimeout(resolve, 5000)); // Tunggu koneksi stabil
+                                    await this.setProxy(device.id, targetProxy);
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
                                     
-                                    const currentIP = await this.getCurrentIP(device.id);
-                                    console.log(`[ADB] IP Baru pada ${device.id}: ${currentIP || 'Gagal mengambil'}`);
+                                    const appliedProxy = await this.getAppliedProxy(device.id);
+                                    console.log(`[ADB] Proxy yang terpasang di sistem pada ${device.id}: ${appliedProxy || 'None'}`);
 
-                                    if (currentIP && currentIP !== initialIP) {
+                                    if (appliedProxy && appliedProxy.includes(targetProxy)) {
                                         proxyApplied = true;
-                                        console.log(`[ADB] Proxy ${proxy} BERHASIL pada ${device.id}! IP berubah dari ${initialIP} ke ${currentIP}.`);
+                                        console.log(`[ADB] Proxy ${targetProxy} BERHASIL terverifikasi di system settings pada ${device.id}.`);
                                     } else {
                                         retryCount++;
-                                        console.log(`[ADB] Proxy ${proxy} GAGAL pada ${device.id} (IP tetap/tidak terbaca). Mencoba proxy lain... (${retryCount}/5)`);
+                                        console.log(`[ADB] Proxy ${targetProxy} GAGAL terpasang pada ${device.id} (System setting tidak cocok). Mencoba lagi... (${retryCount}/5)`);
                                         await this.clearProxy(device.id);
-                                        await new Promise(resolve => setTimeout(resolve, 2000));
+                                        await new Promise(resolve => setTimeout(resolve, 1000));
                                     }
                                 }
 
                                 if (!proxyApplied) {
-                                    console.log(`[ADB] Gagal memasang proxy pada ${device.id} setelah ${retryCount} kali percobaan. Lanjut tanpa proxy...`);
+                                    console.log(`[ADB] Gagal memasang proxy di system settings pada ${device.id} setelah ${retryCount} kali percobaan.`);
                                 }
-                                // --------------------------------------------------
+                                // -----------------------------------------------
 
                                 await this.forcePortrait(device.id);
                                 await new Promise(resolve => setTimeout(resolve, 1000));
