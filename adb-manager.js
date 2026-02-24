@@ -417,7 +417,7 @@ class ADBManager {
             const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/ads.xml && cat /sdcard/ads.xml');
             const xml = (await adb.util.readAll(xmlStream)).toString();
             
-            const keywords = "Lewati|Skip|Skip ads|Skip ad|Close ad panel|Close ad";
+            const keywords = "Skip";
             const resIds = "skip_ad|skip_button|skip_ads|skip_ad_button|skip_button_container|modern_skip_ad_button|next_gen_skip_ad_button|common_skip_ad_button";
 
             const patterns = [
