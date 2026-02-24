@@ -153,6 +153,15 @@ class ADBManager {
         }
     }
 
+    async reboot(serial) {
+        console.log(`[ADB] Proses selesai, merestart perangkat ${serial}...`);
+        try {
+            return this.shell(serial, 'reboot');
+        } catch (err) {
+            console.error(`[ADB] Gagal merestart perangkat ${serial}:`, err.message);
+        }
+    }
+
     async getRandomVideo() {
         const filePath = path.join(__dirname, 'video_list.txt');
         if (!fs.existsSync(filePath)) return null;
@@ -447,7 +456,9 @@ class ADBManager {
                                 const checkAdsLoop = async () => {
                                     if (Date.now() > endTime) {
                                         console.log(`[ADB] Selesai menonton di ${device.id}.`);
-                                        this.keyevent(device.id, 3); // Home
+                                        await this.keyevent(device.id, 3); // Home
+                                        await new Promise(resolve => setTimeout(resolve, 2000));
+                                        await this.reboot(device.id);
                                         return;
                                     }
                                     
@@ -468,9 +479,10 @@ class ADBManager {
                 });
 
                 tracker.on('remove', device => {
-                    console.log(`[ADB] Perangkat dilepas: ${device.id}`);
-                    // Kita tidak menghapus dari processedDevices agar jika dicolok lagi tidak trigger ulang 
-                    // (Sesuai permintaan agar tidak berjalan 2x)
+                    console.log(`[ADB] Perangkat dilepas/reboot: ${device.id}`);
+                    // Hapus dari processedDevices agar saat menyala lagi (reconnect), siklus berjalan ulang
+                    this.processedDevices.delete(device.id);
+                    this.saveProcessedDevices();
                     onUpdate('remove', device);
                 });
 
