@@ -580,7 +580,7 @@ class ADBManager {
                      console.log(`[ADB] Iklan berhasil dilewati via XML di ${serial}`);
                      break;
                  }
-                 await new Promise(resolve => setTimeout(resolve, 3000));
+                 await new Promise(resolve => setTimeout(resolve, 1000));
              }
 
              if (!skipFound) {
