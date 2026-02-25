@@ -9,6 +9,7 @@ const PROCESSED_FILE = path.join(__dirname, 'processed_devices.json');
 class ADBManager {
     constructor() {
         this.processedDevices = new Set();
+        this.activeDevices = new Set(); // Track currently online devices
         this.resetProcessedDevices();
     }
 
@@ -587,6 +588,12 @@ class ADBManager {
             const endTime = startTime + (video.duration * 60 * 1000);
             
             const watchLoop = async () => {
+                // Stop if device is no longer active
+                if (!this.activeDevices.has(serial)) {
+                    console.log(`[ADB] Perangkat ${serial} terputus, menghentikan monitoring.`);
+                    return;
+                }
+
                 if (Date.now() > endTime) {
                     console.log(`[ADB] Selesai menonton di ${serial}.`);
                     await this.stopYouTube(serial);
@@ -594,7 +601,9 @@ class ADBManager {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     console.log(`[ADB] Memulai ulang alur untuk ${serial}...`);
-                    this.runAutomationFlow(serial); // REPEAT THE FLOW
+                    if (this.activeDevices.has(serial)) {
+                        this.runAutomationFlow(serial); // REPEAT THE FLOW
+                    }
                     return;
                 }
                 
@@ -607,16 +616,34 @@ class ADBManager {
 
         } catch (err) {
             console.error(`[ADB] Error pada flow otomatisasi ${serial}:`, err.message);
-            console.log(`[ADB] Mencoba ulang dalam 10 detik untuk ${serial}...`);
-            setTimeout(() => this.runAutomationFlow(serial), 10000);
+            
+            // Only retry if device is still active
+            if (this.activeDevices.has(serial)) {
+                console.log(`[ADB] Mencoba ulang dalam 10 detik untuk ${serial}...`);
+                setTimeout(() => this.runAutomationFlow(serial), 10000);
+            } else {
+                console.log(`[ADB] Perangkat ${serial} sudah offline, menghentikan percobaan ulang.`);
+            }
         }
     }
 
     trackDevices(onUpdate) {
+        // Ambil daftar perangkat yang sudah tersambung di awal
+        client.listDevices()
+            .then(devices => {
+                devices.forEach(device => {
+                    if (device.type !== 'offline') {
+                        this.activeDevices.add(device.id);
+                    }
+                });
+            })
+            .catch(err => console.error('[ADB] Gagal list devices awal:', err.message));
+
         client.trackDevices()
             .then((tracker) => {
                 tracker.on('add', async device => {
                     console.log(`[ADB] Perangkat terdeteksi: ${device.id}`);
+                    this.activeDevices.add(device.id);
                     
                     if (!this.processedDevices.has(device.id)) {
                         this.processedDevices.add(device.id);
@@ -631,6 +658,7 @@ class ADBManager {
 
                 tracker.on('remove', device => {
                     console.log(`[ADB] Perangkat dilepas/reboot: ${device.id}`);
+                    this.activeDevices.delete(device.id);
                     // Hapus dari processedDevices agar saat menyala lagi (reconnect), siklus berjalan ulang
                     this.processedDevices.delete(device.id);
                     this.saveProcessedDevices();
