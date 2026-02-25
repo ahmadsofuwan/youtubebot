@@ -299,6 +299,8 @@ class ADBManager {
         try {
             const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/view.xml && cat /sdcard/view.xml');
             const xml = (await adb.util.readAll(xmlStream)).toString();
+            fs.writeFileSync(path.join(__dirname, `debug_${serial}.xml`), xml);
+
             
             // Mencoba mencari elemen yang memiliki teks sesuai judul (case-insensitive)
             const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
