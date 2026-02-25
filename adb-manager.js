@@ -295,15 +295,15 @@ class ADBManager {
         const { title, channel } = videoInfo;
         console.log(`[ADB] Mencoba mencari video valid untuk "${title}" (Channel: ${channel || 'Semua'}) pada ${serial}`);
         
-        const maxScrollAttempts = 3;
+        const maxScrollAttempts = 1;
         const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
         for (let attempt = 0; attempt <= maxScrollAttempts; attempt++) {
             if (attempt > 0) {
-                console.log(`[ADB] Video belum ditemukan atau hanya ada iklan, melakukan scroll down... (Percobaan ${attempt}/${maxScrollAttempts})`);
-                // Scroll down sedikit (sekitar setengah layar)
-                await this.swipe(serial, 540, 1500, 540, 800, 1000);
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                console.log(`[ADB] Video belum ditemukan pada layar pertama, melakukan scrolldown 1x untuk pengecekan ulang...`);
+                // Scroll down (satu kali saja sesuai permintaan)
+                await this.swipe(serial, 540, 1600, 540, 600, 1000);
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
             try {
