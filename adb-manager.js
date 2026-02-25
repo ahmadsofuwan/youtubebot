@@ -293,76 +293,95 @@ class ADBManager {
 
     async clickFirstVideo(serial, videoInfo) {
         const { title, channel } = videoInfo;
-        console.log(`[ADB] Mencoba mendeteksi video "${title}" dari channel "${channel || 'Semua'}" pada ${serial}`);
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Tunggu hasil muncul
+        console.log(`[ADB] Mencoba mencari video valid untuk "${title}" (Channel: ${channel || 'Semua'}) pada ${serial}`);
+        
+        const maxScrollAttempts = 3;
+        const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-        try {
-            const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/view.xml && cat /sdcard/view.xml');
-            const xml = (await adb.util.readAll(xmlStream)).toString();
-            
-            // 1. Cari semua koordinat "Ad" atau "Sponsored" untuk dihindari
-            const adPatterns = [
-                /text="(Ad|Sponsored|Iklan|Promoted)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i,
-                /resource-id="[^"]*ad_badge"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i,
-                /resource-id="[^"]*sponsored_label"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i
-            ];
-            
-            const adPositions = [];
-            for (const pattern of adPatterns) {
-                const matches = xml.matchAll(new RegExp(pattern, 'gi'));
-                for (const m of matches) {
-                    adPositions.push({ y1: parseInt(m[pattern.source.includes('text') ? 3 : 2]), y2: parseInt(m[pattern.source.includes('text') ? 5 : 4]) });
-                }
+        for (let attempt = 0; attempt <= maxScrollAttempts; attempt++) {
+            if (attempt > 0) {
+                console.log(`[ADB] Video belum ditemukan atau hanya ada iklan, melakukan scroll down... (Percobaan ${attempt}/${maxScrollAttempts})`);
+                // Scroll down sedikit (sekitar setengah layar)
+                await this.swipe(serial, 540, 1500, 540, 800, 1000);
+                await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
-            // 2. Cari semua elemen yang berpotensi sebagai Judul Video
-            const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const titlePatterns = [
-                new RegExp(`text="[^"]*${escapedTitle}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'gi'),
-                /resource-id="[^"]*[:\/]title"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi,
-                /resource-id="[^"]*[:\/]video_info[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi
-            ];
+            try {
+                const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/view.xml && cat /sdcard/view.xml');
+                const xml = (await adb.util.readAll(xmlStream)).toString();
+                
+                // 1. Kumpulkan semua posisi label "Iklan/Sponsored"
+                const adPositions = [];
+                const adPatterns = [
+                    /text="(Ad|Sponsored|Iklan|Promoted)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi,
+                    /content-desc="(Ad|Sponsored|Iklan|Promoted)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi,
+                    /resource-id="[^"]*[:\/]ad_badge"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi
+                ];
 
-            let bestMatch = null;
-
-            for (const pattern of titlePatterns) {
-                const matches = xml.matchAll(pattern);
-                for (const m of matches) {
-                    const x1 = parseInt(m[1]);
-                    const y1 = parseInt(m[2]);
-                    const x2 = parseInt(m[3]);
-                    const y2 = parseInt(m[4]);
-                    const centerX = Math.floor((x1 + x2) / 2);
-                    const centerY = Math.floor((y1 + y2) / 2);
-
-                    // Lewati jika koordinat terlalu atas (header) atau terlalu bawah
-                    if (centerY < 250 || centerY > 1900) continue;
-
-                    // Cek apakah match ini dekat dengan posisi Ad
-                    const isAd = adPositions.some(adPos => Math.abs(adPos.y1 - y1) < 200);
-                    if (isAd) {
-                        console.log(`[ADB] Skip match di Y=${centerY} karena terdeteksi sebagai Iklan/Sponsored.`);
-                        continue;
+                for (const pattern of adPatterns) {
+                    const matches = xml.matchAll(pattern);
+                    for (const m of matches) {
+                        adPositions.push({ y1: parseInt(m[2]), y2: parseInt(m[4]) });
                     }
-
-                    bestMatch = { x: centerX, y: centerY };
-                    break; 
                 }
-                if (bestMatch) break;
-            }
 
-            if (bestMatch) {
-                console.log(`[ADB] Video valid terdeteksi di koordinat ${bestMatch.x}, ${bestMatch.y}`);
-                return this.tap(serial, bestMatch.x, bestMatch.y);
-            } else {
-                console.log('[ADB] Gagal mendeteksi video non-iklan via XML, mencoba koordinat fallback yang lebih rendah...');
-                // Fallback: Tap area yang biasanya di bawah baris iklan pertama (sekitar Y=800-1000)
-                return this.tap(serial, 540, 1000); 
+                // 2. Cari elemen yang memiliki Judul Video yang kita mau
+                const titlePatterns = [
+                    new RegExp(`text="[^"]*${escapedTitle}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'gi'),
+                    /resource-id="[^"]*[:\/]title"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi,
+                    /resource-id="[^"]*[:\/]video_info[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi
+                ];
+
+                let bestVideoMatch = null;
+
+                for (const pattern of titlePatterns) {
+                    const matches = xml.matchAll(pattern);
+                    for (const m of matches) {
+                        const x1 = parseInt(m[1]);
+                        const y1 = parseInt(m[2]);
+                        const x2 = parseInt(m[3]);
+                        const y2 = parseInt(m[4]);
+                        const centerX = Math.floor((x1 + x2) / 2);
+                        const centerY = Math.floor((y1 + y2) / 2);
+
+                        // Filter area non-interaktif
+                        if (centerY < 200 || centerY > 1900) continue;
+
+                        // Cek apakah judul ini bagian dari blok iklan (judul iklan seringkali mengandung keyword video kita)
+                        // Kita cek radius cukup luas (350px) karena teks "Sponsored" bisa di bawah judul
+                        const isPartOfAd = adPositions.some(adPos => Math.abs(adPos.y1 - y1) < 350 || Math.abs(adPos.y2 - y1) < 350);
+                        
+                        if (isPartOfAd) {
+                            console.log(`[ADB] Skip hasil di Y=${centerY} karena terdeteksi sebagai blok iklan.`);
+                            continue;
+                        }
+
+                        // Jika ada filter channel, pastikan channel ada di sekitar video (opsional tapi membantu)
+                        if (channel) {
+                            const lowerXml = xml.toLowerCase();
+                            if (!lowerXml.includes(channel.toLowerCase())) {
+                                console.log(`[ADB] Warning: Nama channel "${channel}" tidak terlihat di sekitar, tetap mencoba.`);
+                            }
+                        }
+
+                        bestVideoMatch = { x: centerX, y: centerY };
+                        break;
+                    }
+                    if (bestVideoMatch) break;
+                }
+
+                if (bestVideoMatch) {
+                    console.log(`[ADB] Video valid ditemukan di koordinat ${bestVideoMatch.x}, ${bestVideoMatch.y}`);
+                    return this.tap(serial, bestVideoMatch.x, bestVideoMatch.y);
+                }
+
+            } catch (err) {
+                console.error('[ADB] Error saat mencari video:', err.message);
             }
-        } catch (err) {
-            console.error('[ADB] Error saat filter video iklan:', err.message);
-            return this.tap(serial, 540, 1000);
         }
+
+        console.log('[ADB] Gagal menemukan video valid setelah beberapa kali scroll, menggunakan fallback tap tengah.');
+        return this.tap(serial, 540, 1100);
     }
 
     async findAndClickAdBanner(serial) {
