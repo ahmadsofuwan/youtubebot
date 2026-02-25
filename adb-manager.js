@@ -294,7 +294,7 @@ class ADBManager {
     async clickFirstVideo(serial, videoInfo) {
         const { title, channel } = videoInfo;
         console.log(`[ADB] Mencoba mencari video valid untuk "${title}" (Channel: ${channel || 'Semua'}) pada ${serial}`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 10000));
         const maxScrollAttempts = 1;
         const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
