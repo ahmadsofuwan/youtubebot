@@ -3,6 +3,8 @@ const adb = require("adbkit");
 const fs = require('fs');
 const path = require('path');
 const client = adb.createClient();
+const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const PROCESSED_FILE = path.join(__dirname, 'processed_devices.json');
 
@@ -207,6 +209,21 @@ class ADBManager {
             await this.shell(serial, 'settings put global http_proxy :0');
         } catch (err) {
             console.error(`[ADB] Gagal membersihkan proxy:`, err.message);
+        }
+    }
+
+    async testProxyNode(proxy) {
+        try {
+            // Kita asumsikan formatnya host:port
+            const agent = new HttpsProxyAgent(`http://${proxy}`);
+            const response = await axios.get('https://www.google.com', {
+                httpsAgent: agent,
+                proxy: false, 
+                timeout: 8000
+            });
+            return response.status === 200;
+        } catch (err) {
+            return false;
         }
     }
 
@@ -485,6 +502,15 @@ class ADBManager {
                     break;
                 }
                 
+                console.log(`[ADB] Mengetes proxy ${targetProxy} dari Node.js...`);
+                const isWorking = await this.testProxyNode(targetProxy);
+                if (!isWorking) {
+                    retryCount++;
+                    console.log(`[ADB] Proxy ${targetProxy} GAGAL tes dari Node.js. Mencoba yang lain... (${retryCount}/5)`);
+                    continue;
+                }
+                console.log(`[ADB] Proxy ${targetProxy} BERHASIL tes dari Node.js.`);
+
                 await this.setProxy(serial, targetProxy);
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 

@@ -11,8 +11,10 @@
   "description": "",
   "dependencies": {
     "adbkit": "^2.11.1",
+    "axios": "^1.13.5",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "https-proxy-agent": "^7.0.6",
     "open": "^11.0.0",
     "socket.io": "^4.8.3"
   }
