@@ -13,6 +13,7 @@ app.use(express.json());
 
 
 
+
 // Start tracking globally so automation works without browser open
 adbManager.trackDevices((event, device) => {
     io.emit('device_event', { event, device });

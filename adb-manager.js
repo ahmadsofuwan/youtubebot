@@ -339,12 +339,11 @@ class ADBManager {
                 console.log(`[ADB] Video terdeteksi di koordinat ${centerX}, ${centerY}`);
                 return this.tap(serial, centerX, centerY);
             } else {
-                console.log('[ADB] Gagal mendeteksi video via XML, menggunakan koordinat cadangan (tengah atas).');
-                return this.tap(serial, 540, 900); 
+               return false;
             }
         } catch (err) {
             console.error('[ADB] Error saat uiautomator dump:', err.message);
-            return this.tap(serial, 540, 900);
+            return false;
         }
     }
 
@@ -566,11 +565,13 @@ class ADBManager {
             // Cek lagi jika ada dialog "Open with" setelah pencarian
             await this.dismissYouTubeDismissibleDialogs(serial);
 
-            await this.clickFirstVideo(serial, video);
+            let debug = await this.clickFirstVideo(serial, video);
+            console.log(debug);
+            return;
             console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${serial}`);
 
              // Jeda sebelum cek iklan pre-roll (Menghindari scan terlalu dini)
-             await new Promise(resolve => setTimeout(resolve, 5000));
+             await new Promise(resolve => setTimeout(resolve, 3000));
 
              // Pengecekan iklan pre-roll SEGERA (Dipercepat)
              console.log(`[ADB] Menunggu tombol skip di ${serial}...`);
