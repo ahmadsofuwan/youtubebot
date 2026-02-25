@@ -293,79 +293,59 @@ class ADBManager {
 
     async clickFirstVideo(serial, videoInfo) {
         const { title, channel } = videoInfo;
-        console.log(`[ADB] Mencari video "${title}" pada ${serial}...`);
-        
-        const maxScrollAttempts = 5;
-        const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        console.log(`[ADB] Mencoba mendeteksi video "${title}" dari channel "${channel || 'Semua'}" pada ${serial}`);
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Tunggu hasil muncul
 
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        for (let attempt = 0; attempt <= maxScrollAttempts; attempt++) {
-            // Delay 5 detik sebelum dump sesuai permintaan
+        try {
+            const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/view.xml && cat /sdcard/view.xml');
+            const xml = (await adb.util.readAll(xmlStream)).toString();
             
-            if (attempt > 0) {
-                console.log(`[ADB] Judul belum ditemukan, scroll down ke-${attempt} pada ${serial}...`);
-                await this.swipe(serial, 540, 1600, 540, 600, 1000);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+            // Mencoba mencari elemen yang memiliki teks sesuai judul (case-insensitive)
+            const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const exactPattern = new RegExp(`text="[^"]*${escapedTitle}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'i');
+            
+            let match = xml.match(exactPattern);
+            
+            if (!match) {
+                console.log(`[ADB] Judul spesifik tidak ditemukan di XML, mencoba mencari elemen title umum...`);
+                const patterns = [
+                    /resource-id="[^"]*[:\/]title"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/,
+                    /resource-id="[^"]*[:\/]video_info[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/
+                ];
+                for (const pattern of patterns) {
+                    match = xml.match(pattern);
+                    if (match) break;
+                }
             }
+            
+            if (match) {
+                const x1 = parseInt(match[1]);
+                const y1 = parseInt(match[2]);
+                const x2 = parseInt(match[3]);
+                const y2 = parseInt(match[4]);
+                let centerX = Math.floor((x1 + x2) / 2);
+                let centerY = Math.floor((y1 + y2) / 2);
 
-            try {
-                const xmlStream = await client.shell(serial, 'uiautomator dump /sdcard/view.xml && cat /sdcard/view.xml');
-                const xml = (await adb.util.readAll(xmlStream)).toString();
+                // Verifikasi channel jika ada
+                if (channel && !xml.toLowerCase().includes(channel.toLowerCase())) {
+                    console.log(`[ADB] Peringatan: Nama channel "${channel}" tidak ditemukan di layar, tetap mencoba klik...`);
+                }
                 
-                // 1. Kumpulkan posisi Iklan/Sponsored
-                const adPositions = [];
-                const adPatterns = [
-                    /text="(Ad|Sponsored|Iklan|Promoted)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi,
-                    /resource-id="[^"]*[:\/]ad_badge"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi
-                ];
-
-                for (const pattern of adPatterns) {
-                    const matches = xml.matchAll(pattern);
-                    for (const m of matches) {
-                        adPositions.push({ y1: parseInt(m[2]), y2: parseInt(m[4]) });
-                    }
+                if (centerY < 400) {
+                    console.log('[ADB] Koordinat terdeteksi terlalu atas, mencoba klik sedikit lebih rendah...');
+                    centerY += 600;
                 }
 
-                // 2. Cari elemen Judul Video
-                const titlePatterns = [
-                    new RegExp(`text="[^"]*${escapedTitle}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`, 'gi'),
-                    /resource-id="[^"]*[:\/]title"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/gi
-                ];
-
-                let bestMatch = null;
-
-                for (const pattern of titlePatterns) {
-                    const matches = xml.matchAll(pattern);
-                    for (const m of matches) {
-                        const x1 = parseInt(m[1]), y1 = parseInt(m[2]), x2 = parseInt(m[3]), y2 = parseInt(m[4]);
-                        const centerX = Math.floor((x1 + x2) / 2), centerY = Math.floor((y1 + y2) / 2);
-
-                        if (centerY < 250 || centerY > 1900) continue;
-
-                        const isAd = adPositions.some(adPos => Math.abs(adPos.y1 - y1) < 350);
-                        if (isAd) {
-                            console.log(`[ADB] Skip Y=${centerY} (Terdeteksi Iklan)`);
-                            continue;
-                        }
-
-                        bestMatch = { x: centerX, y: centerY };
-                        break;
-                    }
-                    if (bestMatch) break;
-                }
-
-                if (bestMatch) {
-                    console.log(`[ADB] Video ditemukan di ${bestMatch.x}, ${bestMatch.y}`);
-                    return this.tap(serial, bestMatch.x, bestMatch.y);
-                }
-
-            } catch (err) {
-                console.error('[ADB] Error dump XML:', err.message);
+                console.log(`[ADB] Video terdeteksi di koordinat ${centerX}, ${centerY}`);
+                return this.tap(serial, centerX, centerY);
+            } else {
+                console.log('[ADB] Gagal mendeteksi video via XML, menggunakan koordinat cadangan (tengah atas).');
+                return this.tap(serial, 540, 900); 
             }
+        } catch (err) {
+            console.error('[ADB] Error saat uiautomator dump:', err.message);
+            return this.tap(serial, 540, 900);
         }
-
-        // Jika setelah 5x scroll tidak ketemu, lempar error agar cycle restart dari awal
-        throw new Error(`Gagal menemukan video "${title}" setelah 5 kali scroll.`);
     }
 
     async findAndClickAdBanner(serial) {
