@@ -11,31 +11,7 @@ const io = new Server(server);
 app.use(express.static('public'));
 app.use(express.json());
 
-// API Endpoints
-app.get('/api/devices', async (req, res) => {
-    const devices = await adbManager.listDevices();
-    res.json(devices);
-});
 
-app.post('/api/shell', async (req, res) => {
-    const { serial, command } = req.body;
-    try {
-        const output = await adbManager.shell(serial, command);
-        res.json({ output: output.toString() });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get('/api/screenshot/:serial', async (req, res) => {
-    try {
-        const buffer = await adbManager.takeScreenshot(req.params.serial);
-        res.set('Content-Type', 'image/png');
-        res.send(buffer);
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
-});
 
 // Start tracking globally so automation works without browser open
 adbManager.trackDevices((event, device) => {

@@ -466,159 +466,164 @@ class ADBManager {
         return false;
     }
 
-  trackDevices(onUpdate) {
-    client
-      .trackDevices()
-      .then((tracker) => {
-        tracker.on('add', async device => {
+    async runAutomationFlow(serial) {
+        try {
+            const video = await this.getRandomVideo();
+            if (!video) {
+                console.log(`[ADB] video_list.txt kosong atau tidak ada.`);
+                return;
+            }
+
+            // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS & PING ---
+            let proxyApplied = false;
+            let retryCount = 0;
+            while (!proxyApplied && retryCount < 5) {
+                const targetProxy = await this.getRandomProxy();
+                if (!targetProxy) {
+                    console.log('[ADB] proxy.txt tidak ditemukan atau kosong. Melewati setup proxy.');
+                    break;
+                }
+                
+                await this.setProxy(serial, targetProxy);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                const appliedProxy = await this.getAppliedProxy(serial);
+                console.log(`[ADB] Proxy yang terpasang di sistem pada ${serial}: ${appliedProxy || 'None'}`);
+
+                if (appliedProxy && appliedProxy.includes(targetProxy)) {
+                    // Verifikasi koneksi internet via proxy dengan ping ke YouTube
+                    const canPing = await this.ping(serial);
+                    if (canPing) {
+                        proxyApplied = true;
+                        console.log(`[ADB] Proxy ${targetProxy} BERHASIL (Settings OK & Ping OK) pada ${serial}.`);
+                    } else {
+                        retryCount++;
+                        console.log(`[ADB] Proxy ${targetProxy} GAGAL (Tersambung tapi tidak bisa akses internet). Mencoba lagi... (${retryCount}/5)`);
+                        await this.clearProxy(serial);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                } else {
+                    retryCount++;
+                    console.log(`[ADB] Proxy ${targetProxy} GAGAL pada ${serial} (System setting tidak cocok). Mencoba lagi... (${retryCount}/5)`);
+                    await this.clearProxy(serial);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            if (!proxyApplied) {
+                console.log(`[ADB] Gagal memasang proxy yang berfungsi pada ${serial} setelah ${retryCount} kali percobaan.`);
+            }
+            // -----------------------------------------------
+            await this.forcePortrait(serial);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            await this.stopYouTube(serial);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            await this.openYouTube(serial);
+            await new Promise(resolve => setTimeout(resolve, 3000)); 
+            
+            // Paksa portrait lagi setelah YouTube terbuka (mencegah YouTube start di landscape)
+            await this.forcePortrait(serial);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Coba lewati dialog login jika ada
+            await this.dismissYouTubeDismissibleDialogs(serial);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            await this.searchYouTube(serial, video.query);
+            await new Promise(resolve => setTimeout(resolve, 5000)); 
+
+            // Cek lagi jika ada dialog "Open with" setelah pencarian
+            await this.dismissYouTubeDismissibleDialogs(serial);
+
+            await this.clickFirstVideo(serial, video);
+            console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${serial}`);
+
+             // Jeda sebelum cek iklan pre-roll (Menghindari scan terlalu dini)
+             await new Promise(resolve => setTimeout(resolve, 5000));
+
+             // Pengecekan iklan pre-roll SEGERA (Dipercepat)
+             console.log(`[ADB] Menunggu tombol skip di ${serial}...`);
+             let skipFound = false;
+             for (let i = 0; i < 6; i++) { // Pantau selama ~12-15 detik (Dump + 1s jeda)
+                 skipFound = await this.checkAndSkipAds(serial, false);
+                 if (skipFound) {
+                     console.log(`[ADB] Iklan berhasil dilewati via XML di ${serial}`);
+                     break;
+                 }
+                 await new Promise(resolve => setTimeout(resolve, 1000));
+             }
+
+             if (!skipFound) {
+                 console.log(`[ADB] Skip tidak terdeteksi via XML dalam 15 detik, gunakan fallback tap...`);
+                 await this.checkAndSkipAds(serial, true);
+             }
+
+            // Jeda sebentar sebelum cek banner iklan
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const bannerClicked = await this.findAndClickAdBanner(serial);
+            if (bannerClicked) {
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // Pastikan bukan Play Store yang terbuka
+                if (await this.isPlayStoreOpen(serial)) {
+                    console.log(`[ADB] Play Store terdeteksi setelah klik iklan, kembali ke YouTube...`);
+                    await this.keyevent(serial, 4); // Back
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                    const scrollDuration = Math.floor(Math.random() * 30) + 60;
+                    await this.slowScroll(serial, scrollDuration);
+                    
+                    console.log(`[ADB] Selesai mengunjungi iklan, kembali ke YouTube pada ${serial}`);
+                    await this.keyevent(serial, 4); 
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
+
+            // Loop pengecekan iklan selama durasi nonton
+            const startTime = Date.now();
+            const endTime = startTime + (video.duration * 60 * 1000);
+            
+            const watchLoop = async () => {
+                if (Date.now() > endTime) {
+                    console.log(`[ADB] Selesai menonton di ${serial}.`);
+                    await this.stopYouTube(serial);
+                    console.log(`[ADB] Jeda 5 detik untuk istirahat pada ${serial}...`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    
+                    console.log(`[ADB] Memulai ulang alur untuk ${serial}...`);
+                    this.runAutomationFlow(serial); // REPEAT THE FLOW
+                    return;
+                }
+                
+                await this.checkAndSkipAds(serial);
+                console.log(`[ADB] Memantau iklan (real-time) di ${serial}...`);
+                setTimeout(watchLoop, 3000); 
+            };
+            
+            watchLoop();
+
+        } catch (err) {
+            console.error(`[ADB] Error pada flow otomatisasi ${serial}:`, err.message);
+            console.log(`[ADB] Mencoba ulang dalam 10 detik untuk ${serial}...`);
+            setTimeout(() => this.runAutomationFlow(serial), 10000);
+        }
+    }
+
+    trackDevices(onUpdate) {
+        client.trackDevices()
+            .then((tracker) => {
+                tracker.on('add', async device => {
                     console.log(`[ADB] Perangkat terdeteksi: ${device.id}`);
                     
                     if (!this.processedDevices.has(device.id)) {
                         this.processedDevices.add(device.id);
                         this.saveProcessedDevices();
-
-                        setTimeout(async () => {
-                            try {
-                                const video = await this.getRandomVideo();
-                                if (!video) {
-                                    console.log(`[ADB] video_list.txt kosong atau tidak ada.`);
-                                    return;
-                                }
-
-                                // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS & PING ---
-                                let proxyApplied = false;
-                                let retryCount = 0;
-                                while (!proxyApplied && retryCount < 5) {
-                                    const targetProxy = await this.getRandomProxy();
-                                    if (!targetProxy) {
-                                        console.log('[ADB] proxy.txt tidak ditemukan atau kosong. Melewati setup proxy.');
-                                        break;
-                                    }
-                                    
-                                    await this.setProxy(device.id, targetProxy);
-                                    await new Promise(resolve => setTimeout(resolve, 2000));
-                                    
-                                    const appliedProxy = await this.getAppliedProxy(device.id);
-                                    console.log(`[ADB] Proxy yang terpasang di sistem pada ${device.id}: ${appliedProxy || 'None'}`);
-
-                                    if (appliedProxy && appliedProxy.includes(targetProxy)) {
-                                        // Verifikasi koneksi internet via proxy dengan ping ke YouTube
-                                        const canPing = await this.ping(device.id);
-                                        if (canPing) {
-                                            proxyApplied = true;
-                                            console.log(`[ADB] Proxy ${targetProxy} BERHASIL (Settings OK & Ping OK) pada ${device.id}.`);
-                                        } else {
-                                            retryCount++;
-                                            console.log(`[ADB] Proxy ${targetProxy} GAGAL (Tersambung tapi tidak bisa akses internet). Mencoba lagi... (${retryCount}/5)`);
-                                            await this.clearProxy(device.id);
-                                            await new Promise(resolve => setTimeout(resolve, 1000));
-                                        }
-                                    } else {
-                                        retryCount++;
-                                        console.log(`[ADB] Proxy ${targetProxy} GAGAL pada ${device.id} (System setting tidak cocok). Mencoba lagi... (${retryCount}/5)`);
-                                        await this.clearProxy(device.id);
-                                        await new Promise(resolve => setTimeout(resolve, 1000));
-                                    }
-                                }
-
-                                if (!proxyApplied) {
-                                    console.log(`[ADB] Gagal memasang proxy yang berfungsi pada ${device.id} setelah ${retryCount} kali percobaan.`);
-                                }
-                                // -----------------------------------------------
-
-                                await this.forcePortrait(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                                await this.stopYouTube(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                                await this.openYouTube(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 3000)); 
-                                
-                                // Paksa portrait lagi setelah YouTube terbuka (mencegah YouTube start di landscape)
-                                await this.forcePortrait(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 2000));
-                                
-                                // Coba lewati dialog login jika ada
-                                await this.dismissYouTubeDismissibleDialogs(device.id);
-                                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                                await this.searchYouTube(device.id, video.query);
-                                await new Promise(resolve => setTimeout(resolve, 5000)); 
-
-                                // Cek lagi jika ada dialog "Open with" setelah pencarian
-                                await this.dismissYouTubeDismissibleDialogs(device.id);
-
-                                await this.clickFirstVideo(device.id, video);
-                                console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${device.id}`);
-
-                                 // Jeda sebelum cek iklan pre-roll (Menghindari scan terlalu dini)
-                                 await new Promise(resolve => setTimeout(resolve, 5000));
-
-                                 // Pengecekan iklan pre-roll SEGERA (Dipercepat)
-                                 console.log(`[ADB] Menunggu tombol skip di ${device.id}...`);
-                                 let skipFound = false;
-                                 for (let i = 0; i < 6; i++) { // Pantau selama ~12-15 detik (Dump + 1s jeda)
-                                     skipFound = await this.checkAndSkipAds(device.id, false);
-                                     if (skipFound) {
-                                         console.log(`[ADB] Iklan berhasil dilewati via XML di ${device.id}`);
-                                         break;
-                                     }
-                                     // Gunakan jeda singkat saja agar tidak membuang waktu
-                                     await new Promise(resolve => setTimeout(resolve, 1000));
-                                 }
-
-                                 if (!skipFound) {
-                                     console.log(`[ADB] Skip tidak terdeteksi via XML dalam 15 detik, gunakan fallback tap...`);
-                                     await this.checkAndSkipAds(device.id, true);
-                                 }
-
-                                // Jeda sebentar sebelum cek banner iklan
-                                await new Promise(resolve => setTimeout(resolve, 2000));
-                                
-                                const bannerClicked = await this.findAndClickAdBanner(device.id);
-                                if (bannerClicked) {
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
-                                    
-                                    // Pastikan bukan Play Store yang terbuka
-                                    if (await this.isPlayStoreOpen(device.id)) {
-                                        console.log(`[ADB] Play Store terdeteksi setelah klik iklan, kembali ke YouTube...`);
-                                        await this.keyevent(device.id, 4); // Back
-                                        await new Promise(resolve => setTimeout(resolve, 2000));
-                                    } else {
-                                        const scrollDuration = Math.floor(Math.random() * 30) + 60;
-                                        await this.slowScroll(device.id, scrollDuration);
-                                        
-                                        console.log(`[ADB] Selesai mengunjungi iklan, kembali ke YouTube pada ${device.id}`);
-                                        await this.keyevent(device.id, 4); 
-                                        await new Promise(resolve => setTimeout(resolve, 3000));
-                                    }
-                                }
-
-                                // Loop pengecekan iklan selama durasi nonton (Menggunakan recursive timeout agar lebih stabil)
-                                const startTime = Date.now();
-                                const endTime = startTime + (video.duration * 60 * 1000);
-                                
-                                const checkAdsLoop = async () => {
-                                    if (Date.now() > endTime) {
-                                        console.log(`[ADB] Selesai menonton di ${device.id}.`);
-                                        await this.keyevent(device.id, 3); // Home
-                                        await new Promise(resolve => setTimeout(resolve, 2000));
-                                        await this.reboot(device.id);
-                                        return;
-                                    }
-                                    
-                                    await this.checkAndSkipAds(device.id);
-                                    console.log(`[ADB] Memantau iklan (real-time) di ${device.id}...`);
-                                    setTimeout(checkAdsLoop, 3000); 
-                                };
-                                
-                                checkAdsLoop();
-
-                            } catch (err) {
-                                console.error(`[ADB] Error pada flow otomatisasi ${device.id}:`, err.message);
-                            }
-                        }, 2000); 
+                        
+                        // Jalankan alur otomatisasi
+                        setTimeout(() => this.runAutomationFlow(device.id), 2000);
                     }
                     
                     onUpdate('add', device);
@@ -632,13 +637,13 @@ class ADBManager {
                     onUpdate('remove', device);
                 });
 
-        tracker.on("end", () => console.log("Tracking stopped"));
-      })
-      .catch(err => {
-          console.error('Error tracking devices (Is ADB running?):', err.message);
-          onUpdate('error', err);
-      });
-  }
+                tracker.on("end", () => console.log("Tracking stopped"));
+            })
+            .catch(err => {
+                console.error('Error tracking devices (Is ADB running?):', err.message);
+                onUpdate('error', err);
+            });
+    }
 }
 
 module.exports = new ADBManager();
