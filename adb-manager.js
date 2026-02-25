@@ -572,6 +572,7 @@ class ADBManager {
 
              // Pengecekan iklan pre-roll SEGERA (Dipercepat)
              console.log(`[ADB] Menunggu tombol skip di ${serial}...`);
+             await new Promise(resolve => setTimeout(resolve, 5000));
              let skipFound = false;
              for (let i = 0; i < 6; i++) { // Pantau selama ~12-15 detik (Dump + 1s jeda)
                  skipFound = await this.checkAndSkipAds(serial, false);
@@ -579,6 +580,7 @@ class ADBManager {
                      console.log(`[ADB] Iklan berhasil dilewati via XML di ${serial}`);
                      break;
                  }
+                 await new Promise(resolve => setTimeout(resolve, 3000));
              }
 
              if (!skipFound) {
