@@ -298,9 +298,9 @@ class ADBManager {
         const maxScrollAttempts = 5;
         const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+        await new Promise(resolve => setTimeout(resolve, 5000));
         for (let attempt = 0; attempt <= maxScrollAttempts; attempt++) {
             // Delay 5 detik sebelum dump sesuai permintaan
-            await new Promise(resolve => setTimeout(resolve, 5000));
             
             if (attempt > 0) {
                 console.log(`[ADB] Judul belum ditemukan, scroll down ke-${attempt} pada ${serial}...`);
