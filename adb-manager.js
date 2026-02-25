@@ -565,13 +565,10 @@ class ADBManager {
             // Cek lagi jika ada dialog "Open with" setelah pencarian
             await this.dismissYouTubeDismissibleDialogs(serial);
 
-            let debug = await this.clickFirstVideo(serial, video);
-            console.log(debug);
-            return;
-            console.log(`[ADB] Menonton "${video.query}" selama ${video.duration} menit di ${serial}`);
+            await this.clickFirstVideo(serial, video);
 
              // Jeda sebelum cek iklan pre-roll (Menghindari scan terlalu dini)
-             await new Promise(resolve => setTimeout(resolve, 3000));
+             await new Promise(resolve => setTimeout(resolve, 5000));
 
              // Pengecekan iklan pre-roll SEGERA (Dipercepat)
              console.log(`[ADB] Menunggu tombol skip di ${serial}...`);
@@ -582,7 +579,6 @@ class ADBManager {
                      console.log(`[ADB] Iklan berhasil dilewati via XML di ${serial}`);
                      break;
                  }
-                 await new Promise(resolve => setTimeout(resolve, 1000));
              }
 
              if (!skipFound) {
