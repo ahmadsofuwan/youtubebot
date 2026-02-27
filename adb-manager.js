@@ -498,7 +498,7 @@ class ADBManager {
             // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS & PING ---
             let proxyApplied = false;
             let retryCount = 0;
-            while (!proxyApplied && retryCount < 5) {
+            while (!proxyApplied && retryCount < 20) {
                 const targetProxy = await this.getRandomProxy();
                 if (!targetProxy) {
                     console.log('[ADB] proxy.txt tidak ditemukan atau kosong. Melewati setup proxy.');
