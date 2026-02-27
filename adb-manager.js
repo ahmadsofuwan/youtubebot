@@ -543,7 +543,9 @@ class ADBManager {
 
             if (!proxyApplied) {
                 console.log(`[ADB] Gagal memasang proxy yang berfungsi pada ${serial} setelah ${retryCount} kali percobaan.`);
-                this.runAutomationFlow(serial);
+                if (this.activeDevices.has(serial)) {
+                    this.runAutomationFlow(serial); // REPEAT THE FLOW
+                }
                 return;
             }
             // -----------------------------------------------
