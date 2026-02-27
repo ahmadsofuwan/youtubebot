@@ -498,7 +498,8 @@ class ADBManager {
             // --- PROXY SETUP DENGAN VERIFIKASI SETTINGS & PING ---
             let proxyApplied = false;
             let retryCount = 0;
-            while (!proxyApplied && retryCount < 20) {
+            let retryProxyLimit = 20;
+            while (!proxyApplied && retryCount < retryProxyLimit) {
                 const targetProxy = await this.getRandomProxy();
                 if (!targetProxy) {
                     console.log('[ADB] proxy.txt tidak ditemukan atau kosong. Melewati setup proxy.');
@@ -509,7 +510,7 @@ class ADBManager {
                 const isWorking = await this.testProxyNode(targetProxy);
                 if (!isWorking) {
                     retryCount++;
-                    console.log(`[ADB] Proxy ${targetProxy} GAGAL tes dari Node.js. Mencoba yang lain... (${retryCount}/5)`);
+                    console.log(`[ADB] Proxy ${targetProxy} GAGAL tes dari Node.js. Mencoba yang lain... (${retryCount}/${retryProxyLimit})`);
                     continue;
                 }
                 console.log(`[ADB] Proxy ${targetProxy} BERHASIL tes dari Node.js.`);
