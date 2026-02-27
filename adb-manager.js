@@ -543,6 +543,8 @@ class ADBManager {
 
             if (!proxyApplied) {
                 console.log(`[ADB] Gagal memasang proxy yang berfungsi pada ${serial} setelah ${retryCount} kali percobaan.`);
+                this.runAutomationFlow(serial);
+                return;
             }
             // -----------------------------------------------
             await this.forcePortrait(serial);
